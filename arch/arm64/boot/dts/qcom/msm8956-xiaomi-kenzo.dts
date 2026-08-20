@@ -150,6 +150,9 @@
 		interrupt-parent = <&tlmm>;
 		interrupts = <65 IRQ_TYPE_EDGE_FALLING>;
 
+        reset-delay-ms = <20>;
+        init-delay-ms = <50>;
+
 		pinctrl-names = "default";
 		pinctrl-0 = <&ts_int_default &ts_reset_default &ts_power_default>;
 
