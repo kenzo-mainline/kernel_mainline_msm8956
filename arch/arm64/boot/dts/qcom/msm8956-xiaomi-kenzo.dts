@@ -103,6 +103,8 @@
 		regulator-name = "ts-vdd";
 		enable-active-high;
 		gpio = <&tlmm 134 GPIO_ACTIVE_HIGH>;
+
+		regulator-boot-on;
 	};
 
 	vph_pwr: regulator-vph-pwr {
