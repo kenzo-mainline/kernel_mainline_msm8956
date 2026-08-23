@@ -136,12 +136,31 @@
 		interrupt-parent = <&tlmm>;
 		interrupts = <65 IRQ_TYPE_EDGE_FALLING>;
 
-		pinctrl-0 = <&ts_int_default &ts_reset_default &ts_power_default>;
 		pinctrl-names = "default";
+		pinctrl-0 = <&ts_int_default &ts_reset_default &ts_power_default>;
 
 		reset-gpios = <&tlmm 64 GPIO_ACTIVE_LOW>;
 		vdda-supply = <&pm8950_l6>;
-		vdd-supply = <&atmel_vdd>;
+		vdd-supply = <&ts_vdd>;
+	};
+
+	touchscreen@38 {
+		compatible = "focaltech,ft5426";
+		reg = <0x38>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <65 IRQ_TYPE_EDGE_FALLING>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&ts_int_default &ts_reset_default &ts_power_default>;
+
+		reset-gpios = <&tlmm 64 GPIO_ACTIVE_LOW>;
+		vcc-supply = <&ts_vdd>;
+		iovcc-supply = <&pm8950_l6>;
+
+		touchscreen-size-x = <1080>;
+		touchscreen-size-y = <1920>;
+
+		linux,keycodes = <158 102 139>;
 	};
 };
 
