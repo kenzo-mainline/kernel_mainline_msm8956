@@ -106,9 +106,9 @@
 		compatible = "linux,extcon-usb-dummy";
 	};
 
-	atmel_vdd: regulator-atmel-vdd {
+    ts_vdd: regulator-ts-vdd {
 		compatible = "regulator-fixed";
-		regulator-name = "atmel-vdd";
+		regulator-name = "ts-vdd";
 		enable-active-high;
 		gpio = <&tlmm 134 GPIO_ACTIVE_HIGH>;
 	};
