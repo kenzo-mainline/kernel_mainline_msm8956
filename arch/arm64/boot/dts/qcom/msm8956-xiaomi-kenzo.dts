@@ -160,10 +160,14 @@
 		vcc-supply = <&ts_vdd>;
 		iovcc-supply = <&pm8950_l6>;
 
+		/*
+		 * Panel is 1080x1920. Capacitive keys are extra ABS points
+		 * below the panel (Y=2100; X=160/540/920) and are mapped in
+		 * userspace by ts_vkeys. Do not enlarge size-y: Android
+		 * scales ABS to the display.
+		 */
 		touchscreen-size-x = <1080>;
 		touchscreen-size-y = <1920>;
-
-		linux,keycodes = <158 102 139>;
 	};
 };
 
