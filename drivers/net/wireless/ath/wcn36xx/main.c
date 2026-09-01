@@ -523,6 +523,16 @@ static int wcn36xx_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	case WLAN_CIPHER_SUITE_TKIP:
 		vif_priv->encrypt_type = WCN36XX_HAL_ED_TKIP;
 		break;
+	case WLAN_CIPHER_SUITE_AES_CMAC:
+	case WLAN_CIPHER_SUITE_BIP_CMAC_256:
+	case WLAN_CIPHER_SUITE_BIP_GMAC_128:
+	case WLAN_CIPHER_SUITE_BIP_GMAC_256:
+		/*
+		 * IGTK (BIP) keys are handled by mac80211 in software,
+		 * refuse the key so that mac80211 uses software crypto.
+		 */
+		ret = -EOPNOTSUPP;
+		goto out;
 	default:
 		wcn36xx_err("Unsupported key type 0x%x\n",
 			      key_conf->cipher);
@@ -1410,11 +1420,21 @@ wcn36xx_set_ieee80211_vht_caps(struct ieee80211_sta_vht_cap *vht_cap)
 
 static int wcn36xx_init_ieee80211(struct wcn36xx *wcn)
 {
+	/*
+	 * Management frame protection (MFP/802.11w, BIP/IGTK) is
+	 * implemented by mac80211 in software: management frames are
+	 * always transmitted with dpu_ne set (no firmware encryption)
+	 * and the firmware only handles encryption of data frames.
+	 * CMAC/BIP keys are refused in wcn36xx_set_key() so that
+	 * mac80211 keeps the IGTK in software.  Advertise AES-CMAC and
+	 * MFP support so userspace can negotiate ieee80211w.
+	 */
 	static const u32 cipher_suites[] = {
 		WLAN_CIPHER_SUITE_WEP40,
 		WLAN_CIPHER_SUITE_WEP104,
 		WLAN_CIPHER_SUITE_TKIP,
 		WLAN_CIPHER_SUITE_CCMP,
+		WLAN_CIPHER_SUITE_AES_CMAC,
 	};
 
 	ieee80211_hw_set(wcn->hw, TIMING_BEACON_ONLY);
@@ -1424,6 +1444,7 @@ static int wcn36xx_init_ieee80211(struct wcn36xx *wcn)
 	ieee80211_hw_set(wcn->hw, HAS_RATE_CONTROL);
 	ieee80211_hw_set(wcn->hw, SINGLE_SCAN_ON_ALL_BANDS);
 	ieee80211_hw_set(wcn->hw, REPORTS_TX_ACK_STATUS);
+	ieee80211_hw_set(wcn->hw, MFP_CAPABLE);
 
 	wcn->hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |
 		BIT(NL80211_IFTYPE_AP) |
@@ -1442,6 +1463,9 @@ static int wcn36xx_init_ieee80211(struct wcn36xx *wcn)
 
 	wcn->hw->wiphy->cipher_suites = cipher_suites;
 	wcn->hw->wiphy->n_cipher_suites = ARRAY_SIZE(cipher_suites);
+
+	/* Allow the supplicant to request ieee80211w=1 (optional). */
+	wiphy_ext_feature_set(wcn->hw->wiphy, NL80211_EXT_FEATURE_MFP_OPTIONAL);
 
 #ifdef CONFIG_PM
 	wcn->hw->wiphy->wowlan = &wowlan_support;
