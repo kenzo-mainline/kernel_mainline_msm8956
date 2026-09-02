@@ -162,13 +162,21 @@
 		iovcc-supply = <&pm8950_l6>;
 
 		/*
-		 * Panel is 1080x1920. Capacitive keys are extra ABS points
-		 * below the panel (Y=2100; X=160/540/920) and are mapped in
-		 * userspace by ts_vkeys. Do not enlarge size-y: Android
-		 * scales ABS to the display.
+		 * Panel is 1080x1920. The capacitive keys are extra touch
+		 * points below the panel (Y=2100; X=160/540/920) and are
+		 * turned into key events by the touchscreen driver itself.
+		 * Do not enlarge size-y: Android scales ABS to the display.
 		 */
 		touchscreen-size-x = <1080>;
 		touchscreen-size-y = <1920>;
+
+		/* Left, centre, right, as measured via getevent */
+		linux,keycodes = <KEY_MENU>, <KEY_HOMEPAGE>, <KEY_BACK>;
+		touch-key-y = <2100>;
+		touch-key-height = <96>;
+
+		/* Light the keys backlight while a key is pressed */
+		leds = <&keys_backlight_led>;
 	};
 };
 
@@ -321,13 +329,10 @@
 
 	status = "okay";
 
-	led@1 {
+	keys_backlight_led: led@1 {
 		reg = <1>;
 		color = <LED_COLOR_ID_WHITE>;
 		function = LED_FUNCTION_KBD_BACKLIGHT;
-
-		/* Light the keys while there is input activity */
-		linux,default-trigger = "input-events";
 	};
 };
 
