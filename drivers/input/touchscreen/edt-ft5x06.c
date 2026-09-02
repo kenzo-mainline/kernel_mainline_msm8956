@@ -24,6 +24,7 @@
 #include <linux/input/touchscreen.h>
 #include <linux/irq.h>
 #include <linux/kernel.h>
+#include <linux/leds.h>
 #include <linux/module.h>
 #include <linux/property.h>
 #include <linux/ratelimit.h>
@@ -77,6 +78,8 @@
 #define EDT_DEFAULT_NUM_X		1024
 #define EDT_DEFAULT_NUM_Y		1024
 
+#define EDT_MAX_KEYS			10
+
 #define M06_REG_CMD(factory) ((factory) ? 0xf3 : 0xfc)
 #define M06_REG_ADDR(factory, addr) ((factory) ? (addr) & 0x7f : (addr) & 0x3f)
 
@@ -116,6 +119,16 @@ struct edt_ft5x06_ts_data {
 
 	struct gpio_desc *reset_gpio;
 	struct gpio_desc *wake_gpio;
+
+	/* Capacitive buttons below the active area of the screen */
+	unsigned int num_keys;
+	unsigned int keycodes[EDT_MAX_KEYS];
+	unsigned int key_y;
+	unsigned int key_height;
+	unsigned long keys_pressed;
+
+	/* Optional LED that is lit while a button is pressed */
+	struct led_classdev *button_led;
 
 	struct regmap *regmap;
 
@@ -295,10 +308,79 @@ static const struct regmap_config edt_M06_i2c_regmap_config = {
 	.write = edt_M06_i2c_write,
 };
 
+/*
+ * touchscreen_apply_prop_to_x_y() is private to drivers/input/touchscreen.c,
+ * so reimplement it here for the button zone detection.
+ */
+static void
+edt_ft5x06_apply_prop_to_x_y(const struct touchscreen_properties *prop,
+			     unsigned int *x, unsigned int *y)
+{
+	if (prop->invert_x)
+		*x = prop->max_x - *x;
+
+	if (prop->invert_y)
+		*y = prop->max_y - *y;
+
+	if (prop->swap_x_y)
+		swap(*x, *y);
+}
+
+/*
+ * Map a touch to a capacitive button if it falls within the button zone.
+ * The buttons are laid out like the navigation bar of the user interface:
+ * evenly distributed over the width of the touchscreen, below the active
+ * area. Returns the index of the button, or -1 if the touch is no button.
+ */
+static int edt_ft5x06_ts_key_index(struct edt_ft5x06_ts_data *tsdata,
+				   unsigned int x, unsigned int y)
+{
+	unsigned int tolerance_x, i;
+
+	if (!tsdata->num_keys)
+		return -1;
+
+	edt_ft5x06_apply_prop_to_x_y(&tsdata->prop, &x, &y);
+	tolerance_x = tsdata->prop.max_x / (2 * tsdata->num_keys);
+
+	for (i = 0; i < tsdata->num_keys; i++) {
+		unsigned int key_x = (2 * i + 1) * tsdata->prop.max_x /
+				     (2 * tsdata->num_keys);
+		unsigned int dx = x > key_x ? x - key_x : key_x - x;
+		unsigned int dy = y > tsdata->key_y ? y - tsdata->key_y :
+				  tsdata->key_y - y;
+
+		if (dx <= tolerance_x && dy <= tsdata->key_height)
+			return i;
+	}
+
+	return -1;
+}
+
+static void edt_ft5x06_ts_keys_report(struct edt_ft5x06_ts_data *tsdata,
+				      unsigned long keys_new)
+{
+	unsigned long changes = tsdata->keys_pressed ^ keys_new;
+	unsigned int i;
+
+	for_each_set_bit(i, &changes, EDT_MAX_KEYS) {
+		bool pressed = test_bit(i, &keys_new);
+
+		input_report_key(tsdata->input, tsdata->keycodes[i], pressed);
+
+		if (tsdata->button_led)
+			led_set_brightness(tsdata->button_led,
+					   pressed ? LED_FULL : LED_OFF);
+	}
+
+	tsdata->keys_pressed = keys_new;
+}
+
 static irqreturn_t edt_ft5x06_ts_isr(int irq, void *dev_id)
 {
 	struct edt_ft5x06_ts_data *tsdata = dev_id;
 	struct device *dev = &tsdata->client->dev;
+	unsigned long keys_new = 0;
 	u8 rdbuf[63];
 	int i, type, x, y, id;
 	int error;
@@ -314,6 +396,8 @@ static irqreturn_t edt_ft5x06_ts_isr(int irq, void *dev_id)
 
 	for (i = 0; i < tsdata->max_support_points; i++) {
 		u8 *buf = &rdbuf[i * tsdata->point_len + tsdata->tdata_offset];
+		bool active;
+		int key;
 
 		type = buf[0] >> 6;
 		/* ignore Reserved events */
@@ -331,13 +415,31 @@ static irqreturn_t edt_ft5x06_ts_isr(int irq, void *dev_id)
 			swap(x, y);
 
 		id = (buf[2] >> 4) & 0x0f;
+		active = type != TOUCH_EVENT_UP;
+
+		key = edt_ft5x06_ts_key_index(tsdata, x, y);
+		if (key >= 0) {
+			/*
+			 * The touch belongs to a capacitive button, it must
+			 * not be reported as a finger on the touchscreen.
+			 */
+			input_mt_slot(tsdata->input, id);
+			input_mt_report_slot_inactive(tsdata->input);
+
+			if (active)
+				keys_new |= BIT(key);
+
+			continue;
+		}
 
 		input_mt_slot(tsdata->input, id);
 		if (input_mt_report_slot_state(tsdata->input, MT_TOOL_FINGER,
-					       type != TOUCH_EVENT_UP))
+					       active))
 			touchscreen_report_pos(tsdata->input, &tsdata->prop,
 					       x, y, true);
 	}
+
+	edt_ft5x06_ts_keys_report(tsdata, keys_new);
 
 	input_mt_report_pointer_emulation(tsdata->input, true);
 	input_sync(tsdata->input);
@@ -1138,7 +1240,7 @@ static int edt_ft5x06_ts_probe(struct i2c_client *client)
 	const struct i2c_device_id *id = i2c_client_get_device_id(client);
 	const struct edt_i2c_chip_data *chip_data;
 	struct edt_ft5x06_ts_data *tsdata;
-	unsigned int val;
+	unsigned int val, i;
 	struct input_dev *input;
 	unsigned long irq_flags;
 	int error;
@@ -1321,6 +1423,61 @@ static int edt_ft5x06_ts_probe(struct i2c_client *client)
 
 	touchscreen_parse_properties(input, true, &tsdata->prop);
 
+	if (device_property_present(&client->dev, "linux,keycodes")) {
+		error = device_property_count_u32(&client->dev,
+						  "linux,keycodes");
+		if (error < 0 || error > EDT_MAX_KEYS) {
+			dev_err(&client->dev, "invalid linux,keycodes\n");
+			return error < 0 ? error : -EINVAL;
+		}
+		tsdata->num_keys = error;
+
+		error = device_property_read_u32_array(&client->dev,
+						       "linux,keycodes",
+						       tsdata->keycodes,
+						       tsdata->num_keys);
+		if (error)
+			return dev_err_probe(&client->dev, error,
+					     "unable to read linux,keycodes\n");
+
+		error = device_property_read_u32(&client->dev, "touch-key-y",
+						 &tsdata->key_y);
+		if (error) {
+			dev_err(&client->dev,
+				"touch-key-y is required for touch buttons\n");
+			tsdata->num_keys = 0;
+		}
+	}
+
+	if (tsdata->num_keys) {
+		/*
+		 * Vertical tolerance around touch-key-y, in raw touchscreen
+		 * coordinates. The button zone must not reach into the
+		 * active area of the screen.
+		 */
+		tsdata->key_height = 64;
+		device_property_read_u32(&client->dev, "touch-key-height",
+					 &tsdata->key_height);
+
+		if (tsdata->key_y < tsdata->prop.max_y + tsdata->key_height)
+			dev_warn(&client->dev,
+				 "button zone overlaps the active area\n");
+
+		if (!tsdata->prop.max_x || !tsdata->prop.max_y) {
+			dev_err(&client->dev,
+				"touch buttons need touchscreen-size-x/y\n");
+			tsdata->num_keys = 0;
+		}
+	}
+
+	if (tsdata->num_keys) {
+		tsdata->button_led = devm_of_led_get_optional(&client->dev, 0);
+		if (IS_ERR(tsdata->button_led))
+			return dev_err_probe(&client->dev,
+					     PTR_ERR(tsdata->button_led),
+					     "unable to get touch button LED\n");
+	}
+
 	error = input_mt_init_slots(input, tsdata->max_support_points,
 				    INPUT_MT_DIRECT);
 	if (error) {
@@ -1340,6 +1497,9 @@ static int edt_ft5x06_ts_probe(struct i2c_client *client)
 		dev_err(&client->dev, "Unable to request touchscreen IRQ.\n");
 		return error;
 	}
+
+	for (i = 0; i < tsdata->num_keys; i++)
+		input_set_capability(input, EV_KEY, tsdata->keycodes[i]);
 
 	error = input_register_device(input);
 	if (error)
