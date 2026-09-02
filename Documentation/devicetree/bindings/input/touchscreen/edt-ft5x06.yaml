@@ -61,6 +61,32 @@ properties:
 
   wakeup-source: true
 
+  linux,keycodes:
+    description: |
+      Keycodes for the capacitive buttons below the active area of the
+      screen, ordered from left to right. The buttons are evenly
+      distributed over the width of the touchscreen, like the navigation
+      bar of the user interface.
+    $ref: /schemas/types.yaml#/definitions/uint32-array
+    maxItems: 10
+
+  touch-key-y:
+    description: Vertical position of the capacitive buttons in raw
+                 touchscreen coordinates, i.e. the coordinates as reported
+                 by the controller. Required for linux,keycodes.
+    $ref: /schemas/types.yaml#/definitions/uint32
+
+  touch-key-height:
+    description: Vertical tolerance around touch-key-y in raw touchscreen
+                 coordinates for a touch to be recognised as a button
+                 press. Must not reach into the active area of the screen.
+    $ref: /schemas/types.yaml#/definitions/uint32
+    default: 64
+
+  leds:
+    description: LED that is lit while a capacitive button is pressed.
+    maxItems: 1
+
   vcc-supply: true
   iovcc-supply: true
 
