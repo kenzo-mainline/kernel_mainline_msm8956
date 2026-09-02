@@ -6,6 +6,7 @@
 
 #include <dt-bindings/arm/qcom,ids.h>
 #include <dt-bindings/input/atmel-maxtouch.h>
+#include <dt-bindings/leds/common.h>
 
 #include "msm8956.dtsi"
 
@@ -171,6 +172,43 @@
 	};
 };
 
+&blsp2_i2c2 {
+	status = "okay";
+
+	/* AW2013 RGB "breath light" notification LED */
+	led-controller@45 {
+		compatible = "awinic,aw2013";
+		reg = <0x45>;
+
+		vcc-supply = <&pm8950_l10>;
+		vio-supply = <&pm8950_l5>;
+
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		led@0 {
+			reg = <0>;
+			color = <LED_COLOR_ID_RED>;
+			function = LED_FUNCTION_STATUS;
+			led-max-microamp = <5000>;
+		};
+
+		led@1 {
+			reg = <1>;
+			color = <LED_COLOR_ID_GREEN>;
+			function = LED_FUNCTION_STATUS;
+			led-max-microamp = <5000>;
+		};
+
+		led@2 {
+			reg = <2>;
+			color = <LED_COLOR_ID_BLUE>;
+			function = LED_FUNCTION_STATUS;
+			led-max-microamp = <5000>;
+		};
+	};
+};
+
 &gcc {
 	vdd_gfx-supply = <&pm8004_s5>;
 };
@@ -257,6 +295,37 @@
 	monitored-battery = <&battery>;
 	power-supplies = <&pmi8950_smbcharger>;
 	status = "okay";
+};
+
+&pmi8950_mpps {
+	pmi8950_mpp2_key_backlight: mpp2-key-backlight-state {
+		pins = "mpp2";
+		function = "sink";
+
+		/* Current sink driving the capacitive keys backlight LEDs */
+		drive-strength = <5>;
+		output-low;
+		qcom,dtest = <1>;
+	};
+};
+
+&pmi8950_pwm {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pmi8950_mpp2_key_backlight>;
+
+	/* Output the PWM on DTEST1, sourced by the MPP2 current sink */
+	qcom,dtest = <1 1>;
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	status = "okay";
+
+	led@1 {
+		reg = <1>;
+		color = <LED_COLOR_ID_WHITE>;
+		function = LED_FUNCTION_KBD_BACKLIGHT;
+	};
 };
 
 &pm8950_resin {
