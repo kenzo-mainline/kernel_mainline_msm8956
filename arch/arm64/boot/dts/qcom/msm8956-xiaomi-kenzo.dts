@@ -325,6 +325,9 @@
 		reg = <1>;
 		color = <LED_COLOR_ID_WHITE>;
 		function = LED_FUNCTION_KBD_BACKLIGHT;
+
+		/* Light the keys while there is input activity */
+		linux,default-trigger = "input-events";
 	};
 };
 
