@@ -14,6 +14,7 @@
  *    http://www.glyn.com/Products/Displays
  */
 
+#include <linux/backlight.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
 #include <linux/devm-helpers.h>
@@ -374,6 +375,26 @@ static void edt_ft5x06_ts_key_led_off(struct work_struct *work)
 	led_set_brightness(tsdata->button_led, LED_OFF);
 }
 
+/*
+ * The capacitive keys sit below the panel, so their backlight is only
+ * meaningful while the display is on. The display state is mirrored
+ * into the panel backlight by drm_panel_enable()/drm_panel_disable()
+ * (via backlight_enable()/backlight_disable()), so use it to suppress
+ * the keys backlight while the display is off. Returns true if no
+ * panel backlight is known, so boards without one keep the old
+ * behaviour.
+ */
+static bool edt_ft5x06_ts_display_on(void)
+{
+	struct backlight_device *bl;
+
+	bl = backlight_device_get_by_type(BACKLIGHT_RAW);
+	if (!bl)
+		return true;
+
+	return !backlight_is_blank(bl);
+}
+
 static void edt_ft5x06_ts_keys_report(struct edt_ft5x06_ts_data *tsdata,
 				      unsigned long keys_new)
 {
@@ -389,11 +410,20 @@ static void edt_ft5x06_ts_keys_report(struct edt_ft5x06_ts_data *tsdata,
 	if (tsdata->button_led && changes) {
 		if (keys_new) {
 			cancel_delayed_work_sync(&tsdata->key_led_off_work);
-			led_set_brightness(tsdata->button_led, LED_FULL);
+			if (edt_ft5x06_ts_display_on())
+				led_set_brightness(tsdata->button_led, LED_FULL);
 		} else {
 			schedule_delayed_work(&tsdata->key_led_off_work,
 					      msecs_to_jiffies(tsdata->key_led_timeout_ms));
 		}
+	} else if (tsdata->button_led && !keys_new &&
+		   !edt_ft5x06_ts_display_on()) {
+		/*
+		 * The display went off while the switch-off timeout was
+		 * still running; switch the backlight off right away.
+		 */
+		cancel_delayed_work_sync(&tsdata->key_led_off_work);
+		led_set_brightness(tsdata->button_led, LED_OFF);
 	}
 
 	tsdata->keys_pressed = keys_new;
