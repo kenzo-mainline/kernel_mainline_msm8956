@@ -329,7 +329,8 @@
 		keys_backlight_led: key-backlight-led {
 			function = LED_FUNCTION_KBD_BACKLIGHT;
 			color = <LED_COLOR_ID_WHITE>;
-			gpios = <&pmi8950_mpps 1 GPIO_ACTIVE_HIGH>;
+			/* SPMI-MPP GPIO specifiers use 1-based physical pin numbers: 2 = MPP2 */
+			gpios = <&pmi8950_mpps 2 GPIO_ACTIVE_HIGH>;
 		};
 	};
 };
