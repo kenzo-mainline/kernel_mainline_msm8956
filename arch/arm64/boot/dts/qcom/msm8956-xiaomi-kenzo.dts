@@ -177,6 +177,8 @@
 
 		/* Light the keys backlight while a key is pressed */
 		leds = <&keys_backlight_led>;
+		/* MIUI keeps the buttons lit for ~5 s after the last press */
+		touch-key-led-timeout-ms = <5000>;
 	};
 };
 

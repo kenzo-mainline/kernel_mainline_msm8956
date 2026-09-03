@@ -87,6 +87,14 @@ properties:
     description: LED that is lit while a capacitive button is pressed.
     maxItems: 1
 
+  touch-key-led-timeout-ms:
+    description: |
+      Time in milliseconds to keep the LED lit after the last capacitive
+      button has been released, like the vendor UI does. Set to 0 to turn
+      the LED off immediately on release.
+    $ref: /schemas/types.yaml#/definitions/uint32
+    default: 1500
+
   vcc-supply: true
   iovcc-supply: true
 

@@ -16,6 +16,7 @@
 
 #include <linux/debugfs.h>
 #include <linux/delay.h>
+#include <linux/devm-helpers.h>
 #include <linux/gpio/consumer.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
@@ -129,6 +130,8 @@ struct edt_ft5x06_ts_data {
 
 	/* Optional LED that is lit while a button is pressed */
 	struct led_classdev *button_led;
+	unsigned int key_led_timeout_ms;
+	struct delayed_work key_led_off_work;
 
 	struct regmap *regmap;
 
@@ -357,6 +360,20 @@ static int edt_ft5x06_ts_key_index(struct edt_ft5x06_ts_data *tsdata,
 	return -1;
 }
 
+/*
+ * Turn the button backlight off. It is scheduled key_led_timeout_ms after
+ * the last button was released, so the backlight stays lit for a moment
+ * like the vendor UI does.
+ */
+static void edt_ft5x06_ts_key_led_off(struct work_struct *work)
+{
+	struct edt_ft5x06_ts_data *tsdata =
+		container_of(to_delayed_work(work),
+			     struct edt_ft5x06_ts_data, key_led_off_work);
+
+	led_set_brightness(tsdata->button_led, LED_OFF);
+}
+
 static void edt_ft5x06_ts_keys_report(struct edt_ft5x06_ts_data *tsdata,
 				      unsigned long keys_new)
 {
@@ -367,10 +384,16 @@ static void edt_ft5x06_ts_keys_report(struct edt_ft5x06_ts_data *tsdata,
 		bool pressed = test_bit(i, &keys_new);
 
 		input_report_key(tsdata->input, tsdata->keycodes[i], pressed);
+	}
 
-		if (tsdata->button_led)
-			led_set_brightness(tsdata->button_led,
-					   pressed ? LED_FULL : LED_OFF);
+	if (tsdata->button_led && changes) {
+		if (keys_new) {
+			cancel_delayed_work_sync(&tsdata->key_led_off_work);
+			led_set_brightness(tsdata->button_led, LED_FULL);
+		} else {
+			schedule_delayed_work(&tsdata->key_led_off_work,
+					      msecs_to_jiffies(tsdata->key_led_timeout_ms));
+		}
 	}
 
 	tsdata->keys_pressed = keys_new;
@@ -1478,6 +1501,21 @@ static int edt_ft5x06_ts_probe(struct i2c_client *client)
 					     "unable to get touch button LED\n");
 	}
 
+	if (tsdata->button_led) {
+		error = devm_delayed_work_autocancel(&client->dev,
+						     &tsdata->key_led_off_work,
+						     edt_ft5x06_ts_key_led_off);
+		if (error)
+			return error;
+
+		/* Keep the backlight lit for a moment after release, like
+		 * the vendor UI. A timeout of 0 turns it off immediately. */
+		tsdata->key_led_timeout_ms = 1500;
+		device_property_read_u32(&client->dev,
+					 "touch-key-led-timeout-ms",
+					 &tsdata->key_led_timeout_ms);
+	}
+
 	error = input_mt_init_slots(input, tsdata->max_support_points,
 				    INPUT_MT_DIRECT);
 	if (error) {
@@ -1529,6 +1567,16 @@ static int edt_ft5x06_ts_suspend(struct device *dev)
 	struct edt_ft5x06_ts_data *tsdata = i2c_get_clientdata(client);
 	struct gpio_desc *reset_gpio = tsdata->reset_gpio;
 	int ret;
+
+	if (tsdata->button_led) {
+		/*
+		 * The buttons cannot be pressed while suspended, make sure
+		 * neither a pending timeout nor a stuck on-state keeps the
+		 * backlight burning.
+		 */
+		cancel_delayed_work_sync(&tsdata->key_led_off_work);
+		led_set_brightness(tsdata->button_led, LED_OFF);
+	}
 
 	if (device_may_wakeup(dev))
 		return 0;
