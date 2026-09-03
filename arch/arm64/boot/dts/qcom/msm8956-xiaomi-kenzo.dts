@@ -170,8 +170,8 @@
 		touchscreen-size-x = <1080>;
 		touchscreen-size-y = <1920>;
 
-		/* Left, centre, right, as measured via getevent */
-		linux,keycodes = <KEY_MENU>, <KEY_HOMEPAGE>, <KEY_BACK>;
+		/* Left (recents), centre (home), right (back), getevent-measured */
+		linux,keycodes = <KEY_APPSELECT>, <KEY_HOMEPAGE>, <KEY_BACK>;
 		touch-key-y = <2100>;
 		touch-key-height = <96>;
 
@@ -310,29 +310,27 @@
 		pins = "mpp2";
 		function = "sink";
 
-		/* Current sink driving the capacitive keys backlight LEDs */
+		/*
+		 * Current sink driving the capacitive keys backlight LEDs,
+		 * 5 mA on/off (the downstream "manual" LED mode on MPP2).
+		 */
 		drive-strength = <5>;
 		output-low;
-		qcom,dtest = <1>;
 	};
 };
 
-&pmi8950_pwm {
-	pinctrl-names = "default";
-	pinctrl-0 = <&pmi8950_mpp2_key_backlight>;
+/ {
+	leds {
+		compatible = "gpio-leds";
 
-	/* Output the PWM on DTEST1, sourced by the MPP2 current sink */
-	qcom,dtest = <1 1>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pmi8950_mpp2_key_backlight>;
 
-	#address-cells = <1>;
-	#size-cells = <0>;
-
-	status = "okay";
-
-	keys_backlight_led: led@1 {
-		reg = <1>;
-		color = <LED_COLOR_ID_WHITE>;
-		function = LED_FUNCTION_KBD_BACKLIGHT;
+		keys_backlight_led: key-backlight-led {
+			function = LED_FUNCTION_KBD_BACKLIGHT;
+			color = <LED_COLOR_ID_WHITE>;
+			gpios = <&pmi8950_mpps 1 GPIO_ACTIVE_HIGH>;
+		};
 	};
 };
 
