@@ -1328,16 +1328,16 @@ void q6afe_slim_port_prepare(struct q6afe_port *port,
 			     struct q6afe_slim_cfg *cfg)
 {
 	union afe_port_config *pcfg = &port->port_cfg;
+	int i;
 
 	pcfg->slim_cfg.sb_cfg_minor_version = AFE_API_VERSION_SLIMBUS_CONFIG;
+	pcfg->slim_cfg.slimbus_dev_id = 0;
 	pcfg->slim_cfg.sample_rate = cfg->sample_rate;
 	pcfg->slim_cfg.bit_width = cfg->bit_width;
 	pcfg->slim_cfg.num_channels = cfg->num_channels;
 	pcfg->slim_cfg.data_format = cfg->data_format;
-	pcfg->slim_cfg.shared_ch_mapping[0] = cfg->ch_mapping[0];
-	pcfg->slim_cfg.shared_ch_mapping[1] = cfg->ch_mapping[1];
-	pcfg->slim_cfg.shared_ch_mapping[2] = cfg->ch_mapping[2];
-	pcfg->slim_cfg.shared_ch_mapping[3] = cfg->ch_mapping[3];
+	for (i = 0; i < AFE_PORT_MAX_AUDIO_CHAN_CNT; i++)
+		pcfg->slim_cfg.shared_ch_mapping[i] = cfg->ch_mapping[i];
 
 }
 EXPORT_SYMBOL_GPL(q6afe_slim_port_prepare);

@@ -615,18 +615,26 @@
 
 &sound {
 	compatible = "qcom,apq8096-sndcard";
-	model = "apq8096";
+	model = "xiaomi-kenzo";
 
 	audio-routing =
 		"RX_BIAS", "MCLK",
-		"Speaker Amp INL", "LINEOUT1",
-		"Speaker Amp INR", "LINEOUT2",
+		"Speaker Amp INL", "LINEOUT4",
 		"Speaker", "Speaker Amp OUTL",
-		"Speaker", "Speaker Amp OUTR";
+		"AMIC1", "MIC BIAS1",
+		"MIC BIAS1", "Handset Mic",
+		"AMIC2", "MIC BIAS2",
+		"MIC BIAS2", "Headset Mic",
+		"AMIC3", "MIC BIAS3",
+		"MIC BIAS3", "Secondary Mic";
 
 	aux-devs = <&speaker_amp>;
 
-	widgets = "Speaker", "Speaker";
+	widgets =
+		"Speaker", "Speaker",
+		"Mic", "Handset Mic",
+		"Mic", "Headset Mic",
+		"Mic", "Secondary Mic";
 	pin-switches = "Speaker";
 
 	status = "okay";
@@ -655,7 +663,7 @@
 	slim-dai-link {
 		link-name = "SLIM Playback";
 		cpu {
-			sound-dai = <&q6afedai SLIMBUS_6_RX>;
+			sound-dai = <&q6afedai SLIMBUS_0_RX>;
 		};
 
 		platform {
@@ -663,7 +671,7 @@
 		};
 
 		codec {
-			sound-dai = <&wcd9335 AIF4_PB>;
+			sound-dai = <&wcd9335 AIF1_PB>;
 		};
 	};
 
