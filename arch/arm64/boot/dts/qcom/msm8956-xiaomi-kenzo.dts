@@ -7,6 +7,8 @@
 #include <dt-bindings/arm/qcom,ids.h>
 #include <dt-bindings/input/atmel-maxtouch.h>
 #include <dt-bindings/leds/common.h>
+#include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
+#include <dt-bindings/sound/qcom,wcd9335.h>
 
 #include "msm8956.dtsi"
 
@@ -113,6 +115,39 @@
 		regulator-name = "vph-pwr";
 		regulator-always-on;
 		regulator-boot-on;
+	};
+
+	divclk1_cdc: divclk1 {
+		compatible = "gpio-gate-clock";
+		clocks = <&rpmcc RPM_SMD_DIV_CLK1>;
+		#clock-cells = <0>;
+		enable-gpios = <&pm8950_gpios 1 GPIO_ACTIVE_HIGH>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&divclk1_default>;
+	};
+
+	eldo2: regulator-eldo2 {
+		compatible = "regulator-fixed";
+		regulator-name = "eldo2";
+		enable-active-high;
+		gpio = <&pm8950_gpios 7 GPIO_ACTIVE_HIGH>;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-always-on;
+		regulator-boot-on;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&eldo2_default>;
+	};
+
+	speaker_amp: audio-amplifier {
+		compatible = "simple-audio-amplifier";
+		enable-gpios = <&tlmm 101 GPIO_ACTIVE_HIGH>;
+		sound-name-prefix = "Speaker Amp";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&speaker_amp_default>;
 	};
 };
 
@@ -512,6 +547,142 @@
 	status = "okay";
 };
 
+&adsp {
+	status = "okay";
+};
+
+&pm8950_gpios {
+	divclk1_default: divclk1-state {
+		pins = "gpio1";
+		function = "func2";
+		bias-disable;
+		power-source = <2>;
+	};
+
+	eldo2_default: eldo2-state {
+		pins = "gpio7";
+		function = "normal";
+		bias-disable;
+		power-source = <0>;
+	};
+};
+
+&slim_msm {
+	pinctrl-names = "default";
+	pinctrl-0 = <&slimbus_default>;
+	status = "okay";
+
+	slim@1 {
+		reg = <1>;
+		#address-cells = <2>;
+		#size-cells = <0>;
+
+		tasha_ifd: tas-ifd@0,0 {
+			compatible = "slim217,1a0";
+			reg = <0 0>;
+		};
+
+		wcd9335: codec@1,0 {
+			compatible = "slim217,1a0";
+			reg = <1 0>;
+
+			clock-names = "mclk", "slimbus";
+			clocks = <&divclk1_cdc>,
+				 <&rpmcc RPM_SMD_BB_CLK1>;
+			interrupt-parent = <&tlmm>;
+			interrupts = <120 IRQ_TYPE_LEVEL_HIGH>;
+			interrupt-names = "intr1";
+			interrupt-controller;
+			#interrupt-cells = <1>;
+
+			pinctrl-0 = <&cdc_reset_default &wcd_intr_default>;
+			pinctrl-names = "default";
+
+			reset-gpios = <&tlmm 133 GPIO_ACTIVE_LOW>;
+			slim-ifc-dev = <&tasha_ifd>;
+
+			#sound-dai-cells = <1>;
+
+			vdd-buck-supply = <&eldo2>;
+			vdd-buck-sido-supply = <&eldo2>;
+			vdd-rx-supply = <&pm8950_l5>;
+			vdd-tx-supply = <&pm8950_l5>;
+			vdd-vbat-supply = <&vph_pwr>;
+			vdd-io-supply = <&pm8950_l5>;
+		};
+	};
+};
+
+&sound {
+	compatible = "qcom,apq8096-sndcard";
+	model = "apq8096";
+
+	audio-routing =
+		"RX_BIAS", "MCLK",
+		"Speaker Amp INL", "LINEOUT1",
+		"Speaker Amp INR", "LINEOUT2",
+		"Speaker", "Speaker Amp OUTL",
+		"Speaker", "Speaker Amp OUTR";
+
+	aux-devs = <&speaker_amp>;
+
+	widgets = "Speaker", "Speaker";
+	pin-switches = "Speaker";
+
+	status = "okay";
+
+	mm1-dai-link {
+		link-name = "MultiMedia1";
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA1>;
+		};
+	};
+
+	mm2-dai-link {
+		link-name = "MultiMedia2";
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
+		};
+	};
+
+	mm3-dai-link {
+		link-name = "MultiMedia3";
+		cpu {
+			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA3>;
+		};
+	};
+
+	slim-dai-link {
+		link-name = "SLIM Playback";
+		cpu {
+			sound-dai = <&q6afedai SLIMBUS_6_RX>;
+		};
+
+		platform {
+			sound-dai = <&q6routing>;
+		};
+
+		codec {
+			sound-dai = <&wcd9335 AIF4_PB>;
+		};
+	};
+
+	slimcap-dai-link {
+		link-name = "SLIM Capture";
+		cpu {
+			sound-dai = <&q6afedai SLIMBUS_0_TX>;
+		};
+
+		platform {
+			sound-dai = <&q6routing>;
+		};
+
+		codec {
+			sound-dai = <&wcd9335 AIF1_CAP>;
+		};
+	};
+};
+
 &tlmm {
 	gpio-reserved-ranges = <0 4>, <8 4>;
 
@@ -584,6 +755,50 @@
 		function = "gpio";
 		drive-strength = <16>;
 		bias-pull-up;
+	};
+
+	slimbus_default: slimbus-default-state {
+		pins-clk {
+			pins = "gpio117";
+			function = "lpass_slimbus";
+			drive-strength = <8>;
+			bias-disable;
+		};
+
+		pins-data0 {
+			pins = "gpio118";
+			function = "lpass_slimbus0";
+			drive-strength = <8>;
+			bias-disable;
+		};
+
+		pins-data1 {
+			pins = "gpio119";
+			function = "lpass_slimbus1";
+			drive-strength = <8>;
+			bias-disable;
+		};
+	};
+
+	cdc_reset_default: cdc-reset-default-state {
+		pins = "gpio133";
+		function = "gpio";
+		drive-strength = <16>;
+		bias-pull-down;
+	};
+
+	wcd_intr_default: wcd-intr-default-state {
+		pins = "gpio120";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-down;
+	};
+
+	speaker_amp_default: speaker-amp-default-state {
+		pins = "gpio101";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-down;
 	};
 };
 
